@@ -1,0 +1,73 @@
+import com.amazonaws.services.lambda.model.InvocationType
+import jp.classmethod.aws.gradle.lambda.AWSLambdaInvokeTask
+import jp.classmethod.aws.gradle.lambda.AWSLambdaMigrateFunctionTask
+
+buildscript {
+    ext.kotlin_version = '1.2.31'
+
+    repositories {
+        mavenCentral()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:2.0.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "jp.classmethod.aws:gradle-aws-plugin:0.30"
+    }
+}
+
+version '1.0-SNAPSHOT'
+
+apply plugin: 'com.github.johnrengelman.shadow' // To create a fatjar which can be uploaded to AWS
+apply plugin: 'jp.classmethod.aws'              // Gradle tasks for AWS stuff
+apply plugin: 'jp.classmethod.aws.lambda'       // Gradle tasks for deploying and running lambda's
+apply plugin: 'kotlin'
+
+repositories {
+    jcenter()
+    mavenCentral()
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    // AWS API
+    implementation 'com.amazonaws:aws-lambda-java-core:1.2.0'
+    implementation 'com.amazonaws:aws-lambda-java-events:2.1.0'
+    implementation 'com.amazonaws:aws-java-sdk-s3:1.11.308'
+    // JSON parser for Kotlin
+    implementation 'com.beust:klaxon:3.0.1'
+}
+
+compileKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+
+lambda {
+    region = "eu-west-1"
+}
+
+
+// Task to deploy the code to AWS
+task deployFunction(type: AWSLambdaMigrateFunctionTask, dependsOn: [shadowJar, test]) {
+    functionName = "session-announcer"
+    runtime = com.amazonaws.services.lambda.model.Runtime.Java8
+    role = "arn:aws:iam::${aws.accountId}:role/scheduleCntRole"
+
+    zipFile = shadowJar.archivePath
+    handler = "eu.luminis.blog.SessionAnnouncer::handleRequest"
+    memorySize = 512
+    timeout = 20
+
+}
+
+// Task to directly invoke the lambda in AWS
+task invokeFunction(type: AWSLambdaInvokeTask) {
+    functionName = "session-announcer"
+    invocationType = InvocationType.RequestResponse
+    payload = ""
+    doLast {
+        println "Lambda function result: " + new String(invokeResult.payload.array())
+    }
+}
